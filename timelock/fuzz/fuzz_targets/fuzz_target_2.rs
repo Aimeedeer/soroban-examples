@@ -14,26 +14,20 @@ use soroban_sdk::{contracttype, symbol, vec, Address, Env, IntoVal, Vec};
 use soroban_timelock_contract::*;
 use std::vec::Vec as RustVec;
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 fuzz_target!(
     |input: TestInput| {
-        let env: Env = Default::default();
-
-        let test = ClaimableBalanceTest::setup(
-            env.clone(),
-            input,
-        );
+        let mut test = ClaimableBalanceTest::setup(input);
         let mut run_state = RunState::default();
-
-        //eprintln!("test steps: {:#?}", input.test_steps);
 
         assert_invariants(&test);
 
-        for test_step in &test.test_input.test_steps {
+        for test_step in test.test_input.test_steps.clone().iter() {
             match test_step {
                 TestStep::Deposit(test_step) => test_step.run(&test),
                 TestStep::Claim(test_step) => test_step.run(&test),
-                TestStep::AdvanceTime(test_step) => test_step.run(&test),
+                TestStep::AdvanceTime(test_step) => test_step.run(&mut test),
             }
 
             make_assertions(&test, &test_step, &mut run_state);
@@ -135,7 +129,7 @@ struct TestInput {
     mint_amount: i128,
     claim_addresses: RustVec<<Address as SorobanArbitrary>::Prototype>,
     nonclaim_addresses: RustVec<<Address as SorobanArbitrary>::Prototype>,
-    test_steps: RustVec<TestStep>,
+    test_steps: Arc<RustVec<TestStep>>,
 }
 
 impl<'a> Arbitrary<'a> for TestInput {
@@ -172,7 +166,7 @@ struct StepDeposit {
     time_bound: <TimeBound as SorobanArbitrary>::Prototype,
 }
 
-#[derive(Arbitrary, Debug, Clone)]
+#[derive(Arbitrary, Debug)]
 struct StepClaim {
     claimant_index: usize,
 }
@@ -269,11 +263,8 @@ impl StepClaim {
 }
 
 impl StepAdvanceTime {
-    fn run(&self, test: &ClaimableBalanceTest) {
-        test.env.ledger().with_mut(|ledger| {
-            ledger.sequence_number = ledger.sequence_number.saturating_add(1);
-            ledger.timestamp = ledger.timestamp.saturating_add(self.amount);
-        });
+    fn run(&self, test: &mut ClaimableBalanceTest) {
+        test.reset_env_after_advance_time(self.amount);
     }
 }
 
@@ -306,10 +297,8 @@ struct ClaimableBalanceTest {
 }
 
 impl ClaimableBalanceTest {
-    fn setup(
-        env: Env,
-        test_input: TestInput,
-    ) -> Self {
+    fn setup(test_input: TestInput) -> Self {
+        let env: Env = Default::default();
         env.ledger().set(LedgerInfo {
             timestamp: test_input.start_timestamp,
             protocol_version: 1,
@@ -349,4 +338,16 @@ impl ClaimableBalanceTest {
             contract_address,
         }
     }
+    
+    fn reset_env_after_advance_time(&mut self, amount: u64) -> &mut Self {
+        self.env.ledger().with_mut(|ledger| {
+            ledger.sequence_number = ledger.sequence_number.saturating_add(1);
+            ledger.timestamp = ledger.timestamp.saturating_add(amount);
+        });
+        
+        self.env.budget().reset();
+
+        self
+    }
 }
+
