@@ -12,33 +12,28 @@ use soroban_sdk::arbitrary::SorobanArbitrary;
 use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 use soroban_sdk::{contracttype, symbol, vec, Address, Env, IntoVal, Vec};
 use soroban_timelock_contract::*;
-use std::vec::Vec as RustVec;
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::vec::Vec as RustVec;
 
-fuzz_target!(
-    |input: TestInput| {
-        let mut test = ClaimableBalanceTest::setup(input);
-        let mut run_state = RunState::default();
+fuzz_target!(|input: TestInput| {
+    let mut test = ClaimableBalanceTest::setup(input);
+    let mut run_state = RunState::default();
 
-        assert_invariants(&test);
+    assert_invariants(&test);
 
-        for test_step in test.test_input.test_steps.clone().iter() {
-            match test_step {
-                TestStep::Deposit(test_step) => test_step.run(&test),
-                TestStep::Claim(test_step) => test_step.run(&test),
-                TestStep::AdvanceTime(test_step) => test_step.run(&mut test),
-            }
-
-            make_assertions(&test, &test_step, &mut run_state);
+    for test_step in test.test_input.test_steps.clone().iter() {
+        match test_step {
+            TestStep::Deposit(test_step) => test_step.run(&test),
+            TestStep::Claim(test_step) => test_step.run(&test),
+            TestStep::AdvanceTime(test_step) => test_step.run(&mut test),
         }
-    }
-);
 
-fn make_assertions(
-    test: &ClaimableBalanceTest,
-    test_step: &TestStep,
-    run_state: &mut RunState) {
+        make_assertions(&test, &test_step, &mut run_state);
+    }
+});
+
+fn make_assertions(test: &ClaimableBalanceTest, test_step: &TestStep, run_state: &mut RunState) {
     assert_invariants(test);
     assert_stateful(test, test_step, run_state);
 }
@@ -76,8 +71,10 @@ fn assert_invariants(test: &ClaimableBalanceTest) {
             //assert!(claimable_balance.claimants.len() <= 8);
             assert!(claimable_balance.claimants.len() <= 10);
 
-            let expected_claimants: BTreeSet<Address> = test.claim_addresses.clone().into_iter().collect();
-            let actual_claimants: Result<BTreeSet<Address>, _> = claimable_balance.claimants.clone().into_iter().collect();
+            let expected_claimants: BTreeSet<Address> =
+                test.claim_addresses.clone().into_iter().collect();
+            let actual_claimants: Result<BTreeSet<Address>, _> =
+                claimable_balance.claimants.clone().into_iter().collect();
             let actual_claimants = actual_claimants.expect(".");
             assert_eq!(expected_claimants, actual_claimants);
         } else {
@@ -86,11 +83,7 @@ fn assert_invariants(test: &ClaimableBalanceTest) {
     });
 }
 
-fn assert_stateful(
-    test: &ClaimableBalanceTest,
-    test_step: &TestStep,
-    run_state: &mut RunState)
-{
+fn assert_stateful(test: &ClaimableBalanceTest, test_step: &TestStep, run_state: &mut RunState) {
     let env = &test.env;
 
     env.as_contract(&test.contract.contract_id, || {
@@ -307,15 +300,21 @@ impl ClaimableBalanceTest {
             base_reserve: 10,
         });
 
-        let claim_addresses: RustVec<_> = test_input.claim_addresses.iter().map(|a| {
-            a.into_val(&env)
-        }).collect();
-        let nonclaim_addresses: RustVec<_> = test_input.nonclaim_addresses.iter().map(|a| {
-            a.into_val(&env)
-        }).collect();
-        let all_addresses: RustVec<_> = claim_addresses.iter().chain(
-            nonclaim_addresses.iter()
-        ).cloned().collect();
+        let claim_addresses: RustVec<_> = test_input
+            .claim_addresses
+            .iter()
+            .map(|a| a.into_val(&env))
+            .collect();
+        let nonclaim_addresses: RustVec<_> = test_input
+            .nonclaim_addresses
+            .iter()
+            .map(|a| a.into_val(&env))
+            .collect();
+        let all_addresses: RustVec<_> = claim_addresses
+            .iter()
+            .chain(nonclaim_addresses.iter())
+            .cloned()
+            .collect();
 
         let deposit_address = Address::random(&env);
 
@@ -338,16 +337,15 @@ impl ClaimableBalanceTest {
             contract_address,
         }
     }
-    
+
     fn reset_env_after_advance_time(&mut self, amount: u64) -> &mut Self {
         self.env.ledger().with_mut(|ledger| {
             ledger.sequence_number = ledger.sequence_number.saturating_add(1);
             ledger.timestamp = ledger.timestamp.saturating_add(amount);
         });
-        
+
         self.env.budget().reset();
 
         self
     }
 }
-
